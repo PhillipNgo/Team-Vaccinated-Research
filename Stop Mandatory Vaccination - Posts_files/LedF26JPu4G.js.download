@@ -1,0 +1,4 @@
+if (self.CavalryLogger) { CavalryLogger.start_js(["syyEU"]); }
+
+__d("XBrowserPushRegistrationController",["XController"],(function(a,b,c,d,e,f){e.exports=b("XController").create("/push/permissions/",{})}),null);
+__d("DesktopBrowserNotificationsUpdatePermissionStatus",["AsyncRequest","XBrowserPushRegistrationController"],(function(a,b,c,d,e,f){"use strict";a={updateIfNeeded:function(a){if(a.host!==window.location.hostname)return;window.Notification&&window.Notification.permission!==a.state&&this._updateRegistration(window.location.hostname,window.Notification.permission)},_updateRegistration:function(a,c){var d=b("XBrowserPushRegistrationController").getURIBuilder().getURI();new(b("AsyncRequest"))(d).setData({host:a,state:c}).setMethod("POST").send()}};e.exports=a}),null);
