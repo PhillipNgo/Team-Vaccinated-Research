@@ -3,3 +3,7 @@
 *.jpg
 *.png
 *.php
+
+__pycache__/
+.ipynb_checkpoints/
+*Posts_files/
