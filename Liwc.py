@@ -29,7 +29,7 @@ class LiwcAnalyzer():
     def parse(self, data):
         # List of Words, no punctuation
         def words(text):
-            return re.sub("'", '', re.sub("[^a-zA-Z\\s]", ' ', text)).split()
+            return re.sub("[^a-zA-Z\\s]", ' ', re.sub("['.]", '', text)).split()
 
         # List of Sentences, punction included except end marks (!, ?, .)
         def sentences(text):
