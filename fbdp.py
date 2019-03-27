@@ -26,10 +26,17 @@ class FBDesktopParser():
                 article_div='mbs',
                 article_host_div='_6lz _6mb _1t62 ellipsis',
                 article_subtitle_div='_6m7 _3bt9'):
+        self.filename = filename
         self.load_soup(filename)
         self.article_div = article_div
         self.article_host_div = article_host_div
         self.article_subtitle_div = article_subtitle_div
+    
+    def __repr__(self):
+        return "FBDesktopParser({})".format(self.filename)
+    
+    def __str__(self):
+        return "FBDesktopParser({})".format(self.filename)
 
     #Load a beautifulsoup from the html file
     def load_soup(self, filename):
@@ -147,6 +154,11 @@ class FBDesktopParser():
             bag_of_words_matrix = tfidf_transformer.fit_transform(count_vectorizer.fit_transform(self.posts.text))
             return self.posts.to_sparse().join(pd.SparseDataFrame(bag_of_words_matrix,
                                     columns=['word_' + x for x in count_vectorizer.get_feature_names()]))
+        return self.posts
+    
+    #Join features to dataset
+    def join_features(self, features, **kwargs):
+        self.posts = self.posts.join(features, **kwargs)
         return self.posts
 
     #Build a word cloud
