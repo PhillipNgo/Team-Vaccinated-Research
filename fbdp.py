@@ -6,6 +6,7 @@ import pandas as pd
 import os
 import re
 import nltk
+import textstat
 
 from collections import Counter
 from itertools import combinations, islice
@@ -21,23 +22,33 @@ from sklearn.feature_extraction.text import TfidfTransformer
 from nltk.tokenize import RegexpTokenizer
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
+from Liwc import LiwcAnalyzer
+
 nltk.download('wordnet')
 nltk.download('stopwords')
 nltk.download('averaged_perceptron_tagger')
 nltk.download('vader_lexicon')
 
 class FBDesktopParser():
-    def __init__(self, path='Data',
+    def __init__(self, filename='',
+                path='Data',
                 article_div='mbs',
                 article_host_div='_6lz _6mb _1t62 ellipsis',
                 article_subtitle_div='_6m7 _3bt9'):
-        self.load_soup(path)
+        if filename:
+            self.load_soup(filename)
+        else:
+            self.load_soups(path)
         self.article_div = article_div
         self.article_host_div = article_host_div
         self.article_subtitle_div = article_subtitle_div
 
     #Load a beautifulsoup from the html file
-    def load_soup(self, path):
+    def load_soup(self, filename):
+        self.soups = [BeautifulSoup(open(filename, encoding='utf-8'), 'html.parser')]
+    
+    #Load beautifulsoups from the given directory
+    def load_soups(self, path):
         self.soups = []
         for file in [path + '/' + x for x in os.listdir(path) if 'Posts.html' in x]:
             try:
@@ -156,27 +167,48 @@ class FBDesktopParser():
             return self.posts.to_sparse().join(pd.SparseDataFrame(bag_of_words_matrix,
                                     columns=['word_' + x for x in count_vectorizer.get_feature_names()]))
         
-        #Liwc
-        liwc = LiwcAnalyzer()
-        self.posts['liwc'] = liwc.parse(self.posts.text)
-        
         #Sentiment Analysis
         analyser = SentimentIntensityAnalyzer()
-        self.posts.sentiment = self.posts.text.apply(analyser.polarity_scores)
+        self.posts['sentiment'] = self.posts.text.apply(analyser.polarity_scores)
+        
+        #Readability
+        self.posts['readability'] = self.posts.text.apply(lambda text: [textstat.smog_index(text), textstat.gunning_fog(text), 
+                                                                        textstat.flesch_kincaid_grade(text)])
         
         #TTR
-        unique_words = []
-        for word in self.posts.text_tokenized_lemmatized:
-            if word not in unique_words:
-                unique_words.append(word)
-        token_count = len(words);
-        type_count = len(unique_words);
-        self.posts['ttr'] = type_count / token_count
+        self.posts['ttr'] = self.posts.text_tokenized_lemmatized.apply(
+            lambda tokens: len(set(tokens)) / len(tokens) if len(tokens) else np.nan)
         
+        #Syntax Tree
+#         def calcDepth(text):
+#             parser = nltk.parse.corenlp.CoreNLPParser()
+
+#             def calcSingleDepth(sent):
+#                 parse = next(parser.raw_parse(sentence))
+#                 #parse.pretty_print()
+#                 return parse.height()
+
+#             sentences = nltk.tokenize.sent_tokenize(text)
+#             totalDepth = 0
+
+#             for i in range(len(sentences)):
+#                 sentence = sentences[i]
+#                 totalDepth += calcSingleDepth(sentence)
+
+#             return totalDepth / len(sentences)
+#         self.posts['depth'] = self.posts.text.apply(calcDepth)
+
         return self.posts
+    
+    #Liwc
+    def liwc(self):
+        if self.posts is None:
+            extract_features(self)
+        liwc = LiwcAnalyzer()
+        return liwc.parse(self.posts.text)
 
     #Get bigrams of a group posts
-    def bigrams(self, posts=[]):
+    def bigrams(self, posts):
         stop_words = set(nltk.corpus.stopwords.words("english"))
         w = posts.text_tokenized_lemmatized.apply(
                 lambda words: [word for word in words if word not in stop_words and not word.isdigit()])
@@ -185,7 +217,7 @@ class FBDesktopParser():
         return w.apply(count_bigrams).sum().most_common()
 
     #Get pairs of a group of posts
-    def pairs(self, posts=[]):
+    def pairs(self, posts):
         stop_words = set(nltk.corpus.stopwords.words("english"))
         w = posts.text_tokenized_lemmatized.apply(
                 lambda words: [word for word in words if word not in stop_words and not word.isdigit()])
