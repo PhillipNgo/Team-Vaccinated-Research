@@ -3,9 +3,12 @@
 import numpy as np
 import pandas as pd
 
+import os
 import re
 import nltk
 
+from collections import Counter
+from itertools import combinations, islice
 import wordcloud as wc
 import matplotlib.pyplot as plt
 
@@ -16,27 +19,31 @@ from bs4 import BeautifulSoup, NavigableString
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 from nltk.tokenize import RegexpTokenizer
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 nltk.download('wordnet')
 nltk.download('stopwords')
 nltk.download('averaged_perceptron_tagger')
+nltk.download('vader_lexicon')
 
 class FBDesktopParser():
-    def __init__(self, filename='Data/Stop Mandatory Vaccination - Posts.html',
+    def __init__(self, path='Data',
                 article_div='mbs',
                 article_host_div='_6lz _6mb _1t62 ellipsis',
                 article_subtitle_div='_6m7 _3bt9'):
-        self.load_soup(filename)
+        self.load_soup(path)
         self.article_div = article_div
         self.article_host_div = article_host_div
         self.article_subtitle_div = article_subtitle_div
 
     #Load a beautifulsoup from the html file
-    def load_soup(self, filename):
-        try:
-            self.soup = BeautifulSoup(open(filename, encoding='utf-8'), 'html.parser')
-        except Exception as e:
-            print(e)
+    def load_soup(self, path):
+        self.soups = []
+        for file in [path + '/' + x for x in os.listdir(path) if 'Posts.html' in x]:
+            try:
+                self.soups.append(BeautifulSoup(open(file, encoding='utf-8'), 'html.parser'))
+            except Exception as e:
+                print(e)
 
     #Parse a given post's soup and return a dataframe
     def parse_post(self, post_soup):
@@ -87,10 +94,11 @@ class FBDesktopParser():
 
     #Generator for a set number of posts
     def parse_posts_generator(self, limit=0):
-        for i, post_child in enumerate(self.soup.find_all('div', class_='userContent')):
-            if limit != 0 and i >= limit:
-                break
-            yield self.parse_post(post_child.parent)
+        for soup in self.soups:
+            for i, post_child in enumerate(soup.find_all('div', class_='userContent')):
+                if limit != 0 and i >= limit:
+                    break
+                yield self.parse_post(post_child.parent)
 
     #Parse all posts given a soup
     def parse_posts(self, limit=0):
@@ -135,7 +143,7 @@ class FBDesktopParser():
 
         #Collect punc info
         self.posts['num_words'] = self.posts.text_tokenized_filtered.apply(len)
-        puncs = [('periods', '.'), ('exclamations', '!'), ('questionms', '?'), ('equals', '='), ('dollars', '$')]
+        puncs = [('periods', '.'), ('exclamations', '!'), ('questions', '?'), ('equals', '='), ('dollars', '$')]
         for name, punc in puncs:
             self.posts['num_' + name] = self.posts.text_tokenized.apply(lambda words: words.count(punc))
             self.posts['percent_' + name] = self.posts['num_' + name] / self.posts.num_tokens
@@ -147,8 +155,47 @@ class FBDesktopParser():
             bag_of_words_matrix = tfidf_transformer.fit_transform(count_vectorizer.fit_transform(self.posts.text))
             return self.posts.to_sparse().join(pd.SparseDataFrame(bag_of_words_matrix,
                                     columns=['word_' + x for x in count_vectorizer.get_feature_names()]))
+        
+        #Liwc
+        liwc = LiwcAnalyzer()
+        self.posts['liwc'] = liwc.parse(self.posts.text)
+        
+        #Sentiment Analysis
+        analyser = SentimentIntensityAnalyzer()
+        self.posts.sentiment = self.posts.text.apply(analyser.polarity_scores)
+        
+        #TTR
+        unique_words = []
+        for word in self.posts.text_tokenized_lemmatized:
+            if word not in unique_words:
+                unique_words.append(word)
+        token_count = len(words);
+        type_count = len(unique_words);
+        self.posts['ttr'] = type_count / token_count
+        
         return self.posts
 
+    #Get bigrams of a group posts
+    def bigrams(self, posts=[]):
+        stop_words = set(nltk.corpus.stopwords.words("english"))
+        w = posts.text_tokenized_lemmatized.apply(
+                lambda words: [word for word in words if word not in stop_words and not word.isdigit()])
+        def count_bigrams(words):
+            return Counter(zip(words, islice(words, 1, None)))
+        return w.apply(count_bigrams).sum().most_common()
+
+    #Get pairs of a group of posts
+    def pairs(self, posts=[]):
+        stop_words = set(nltk.corpus.stopwords.words("english"))
+        w = posts.text_tokenized_lemmatized.apply(
+                lambda words: [word for word in words if word not in stop_words and not word.isdigit()])
+        def pairs(words):
+            return list(combinations(set(words), 2))
+        counter = Counter()
+        for ind, val in w.apply(pairs).iteritems():
+            counter.update(val)
+        return counter.most_common()
+    
     #Build a word cloud
     def make_wordcloud(self, include_vaccine_words=False):
         text = ' '.join(self.posts.text_tokenized_lemmatized.apply(lambda x: ' '.join(x)))
