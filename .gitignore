@@ -3,9 +3,15 @@
 *.jpg
 *.png
 *.php
+*.zip
+
+Data/*.html
 
 __pycache__/
 .ipynb_checkpoints/
 *Posts_files/
 
-Data/**/*_files
+Data_Clean/posts.csv
+Data_Clean/*
+Data_Clean/*.csv
+Data_Clean.zip
