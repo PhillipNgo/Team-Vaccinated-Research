@@ -3,8 +3,15 @@
 import numpy as np
 import pandas as pd
 
+import os
 import re
 import nltk
+import textstat
+
+from collections import Counter
+from itertools import combinations, islice
+import wordcloud as wc
+import matplotlib.pyplot as plt
 
 import wordcloud as wc
 import matplotlib.pyplot as plt
@@ -16,9 +23,13 @@ from bs4 import BeautifulSoup, NavigableString
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 from nltk.tokenize import RegexpTokenizer
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
+from Liwc import LiwcAnalyzer
 
 nltk.download('wordnet')
 nltk.download('stopwords')
+nltk.download('vader_lexicon')
 nltk.download('averaged_perceptron_tagger')
 
 class FBDesktopParser():
@@ -40,10 +51,7 @@ class FBDesktopParser():
 
     #Load a beautifulsoup from the html file
     def load_soup(self, filename):
-        try:
-            self.soup = BeautifulSoup(open(filename, encoding='utf-8'), 'html.parser')
-        except Exception as e:
-            print(e)
+        self.soup = BeautifulSoup(open(filename, encoding='utf-8'), 'html.parser')
 
     #Parse a given post's soup and return a dataframe
     def parse_post(self, post_soup):
@@ -52,7 +60,12 @@ class FBDesktopParser():
         data['hashtags'] = []
 
         #Get date published
-        data['timestamp'] = post_soup.find('abbr').attrs['title']
+        abbr = post_soup.find('abbr')
+        if abbr is not None and abbr.attrs is not None and 'title' in abbr.attrs:
+            data['timestamp'] = abbr.attrs['title']
+            data['timestamp'] = pd.to_datetime(data['timestamp'])
+        else:
+            data['timestamp'] = np.nan
 
         #Get text and links on the post
         data['links'] = []
@@ -154,7 +167,53 @@ class FBDesktopParser():
             bag_of_words_matrix = tfidf_transformer.fit_transform(count_vectorizer.fit_transform(self.posts.text))
             return self.posts.to_sparse().join(pd.SparseDataFrame(bag_of_words_matrix,
                                     columns=['word_' + x for x in count_vectorizer.get_feature_names()]))
+        #Bag of words model if wanted ---------------------------------------------------
+        if bag_of_words:
+            count_vectorizer = CountVectorizer()
+            tfidf_transformer = TfidfTransformer()
+            bag_of_words_matrix = tfidf_transformer.fit_transform(count_vectorizer.fit_transform(self.posts.text))
+            return self.posts.to_sparse().join(pd.SparseDataFrame(bag_of_words_matrix,
+                                    columns=['word_' + x for x in count_vectorizer.get_feature_names()]))
+        
+        #Sentiment Analysis
+        analyser = SentimentIntensityAnalyzer()
+        self.posts['sentiment'] = self.posts.text.apply(analyser.polarity_scores)
+        
+        #Readability
+        self.posts['readability'] = self.posts.text.apply(lambda text: [textstat.smog_index(text), textstat.gunning_fog(text), 
+                                                                        textstat.flesch_kincaid_grade(text)])
+        
+        #TTR
+        self.posts['ttr'] = self.posts.text_tokenized_lemmatized.apply(
+            lambda tokens: len(set(tokens)) / len(tokens) if len(tokens) else np.nan)
+        
+        #Syntax Tree
+#         def calcDepth(text):
+#             parser = nltk.parse.corenlp.CoreNLPParser()
+
+#             def calcSingleDepth(sent):
+#                 parse = next(parser.raw_parse(sentence))
+#                 #parse.pretty_print()
+#                 return parse.height()
+
+#             sentences = nltk.tokenize.sent_tokenize(text)
+#             totalDepth = 0
+
+#             for i in range(len(sentences)):
+#                 sentence = sentences[i]
+#                 totalDepth += calcSingleDepth(sentence)
+
+#             return totalDepth / len(sentences)
+#         self.posts['depth'] = self.posts.text.apply(calcDepth)
+        
         return self.posts
+    
+    #Liwc
+    def liwc(self):
+        if self.posts is None:
+            extract_features(self)
+        liwc = LiwcAnalyzer()
+        return liwc.parse(self.posts.text)
     
     #Join features to dataset
     def join_features(self, features, **kwargs):
@@ -174,3 +233,25 @@ class FBDesktopParser():
         plt.imshow(wordcloud)
         plt.axis('off')
         plt.show()
+
+#Made these static since they weren't written to need to belong to the object
+#Get bigrams of a group posts
+def bigrams(posts):
+    stop_words = set(nltk.corpus.stopwords.words("english"))
+    w = posts.text_tokenized_lemmatized.apply(
+            lambda words: [word for word in words if word not in stop_words and not word.isdigit()])
+    def count_bigrams(words):
+        return Counter(zip(words, islice(words, 1, None)))
+    return w.apply(count_bigrams).sum().most_common()
+
+#Get of a group of posts
+def pairs(posts):
+    stop_words = set(nltk.corpus.stopwords.words("english"))
+    w = posts.text_tokenized_lemmatized.apply(
+            lambda words: [word for word in words if word not in stop_words and not word.isdigit()])
+    def pairs(words):
+        return list(combinations(set(words), 2))
+    counter = Counter()
+    for ind, val in w.apply(pairs).iteritems():
+        counter.update(val)
+    return counter.most_common()
