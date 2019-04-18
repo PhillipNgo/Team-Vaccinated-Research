@@ -167,13 +167,6 @@ class FBDesktopParser():
             bag_of_words_matrix = tfidf_transformer.fit_transform(count_vectorizer.fit_transform(self.posts.text))
             return self.posts.to_sparse().join(pd.SparseDataFrame(bag_of_words_matrix,
                                     columns=['word_' + x for x in count_vectorizer.get_feature_names()]))
-        #Bag of words model if wanted ---------------------------------------------------
-        if bag_of_words:
-            count_vectorizer = CountVectorizer()
-            tfidf_transformer = TfidfTransformer()
-            bag_of_words_matrix = tfidf_transformer.fit_transform(count_vectorizer.fit_transform(self.posts.text))
-            return self.posts.to_sparse().join(pd.SparseDataFrame(bag_of_words_matrix,
-                                    columns=['word_' + x for x in count_vectorizer.get_feature_names()]))
         
         #Sentiment Analysis
         analyser = SentimentIntensityAnalyzer()
@@ -233,25 +226,3 @@ class FBDesktopParser():
         plt.imshow(wordcloud)
         plt.axis('off')
         plt.show()
-
-#Made these static since they weren't written to need to belong to the object
-#Get bigrams of a group posts
-def bigrams(posts):
-    stop_words = set(nltk.corpus.stopwords.words("english"))
-    w = posts.text_tokenized_lemmatized.apply(
-            lambda words: [word for word in words if word not in stop_words and not word.isdigit()])
-    def count_bigrams(words):
-        return Counter(zip(words, islice(words, 1, None)))
-    return w.apply(count_bigrams).sum().most_common()
-
-#Get of a group of posts
-def pairs(posts):
-    stop_words = set(nltk.corpus.stopwords.words("english"))
-    w = posts.text_tokenized_lemmatized.apply(
-            lambda words: [word for word in words if word not in stop_words and not word.isdigit()])
-    def pairs(words):
-        return list(combinations(set(words), 2))
-    counter = Counter()
-    for ind, val in w.apply(pairs).iteritems():
-        counter.update(val)
-    return counter.most_common()
